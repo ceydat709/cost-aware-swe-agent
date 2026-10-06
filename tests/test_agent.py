@@ -45,6 +45,19 @@ def test_agent_fixes_bug_and_submits(tmp_path):
     assert "+    return a + b" in result.patch
 
 
+def test_agent_rejects_empty_submit(tmp_path):
+    repo = make_repo(tmp_path)
+    model = ScriptedModel([
+        "```bash\necho SUBMIT\n```",
+        "```bash\nsed -i.bak 's/a - b/a + b/' calc.py && rm calc.py.bak\n```",
+        "```bash\necho SUBMIT\n```",
+    ])
+    result = run_agent("add() is wrong", repo, model, LocalExecutor(repo), AgentConfig())
+    assert result.exit_reason == "submitted"
+    assert result.steps == 3
+    assert "a + b" in result.patch
+
+
 def test_agent_stops_after_format_errors(tmp_path):
     repo = make_repo(tmp_path)
     model = ScriptedModel(["hmm", "still thinking", "no command"])

@@ -52,7 +52,7 @@ def main() -> None:
     else:
         data = list(data)[: args.limit]
 
-    workspace = Path(args.workspace)
+    workspace = Path(args.workspace).resolve()  # git worktree runs from the mirror dir, so paths must be absolute
     run_dir = Path("runs") / args.run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     cache = ResponseCache("cache/llm.sqlite")

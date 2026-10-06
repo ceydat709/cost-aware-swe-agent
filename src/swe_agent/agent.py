@@ -37,6 +37,7 @@ class Executor(Protocol):
 class AgentConfig:
     max_steps: int = 30
     max_format_errors: int = 3
+    max_empty_submits: int = 2
 
 
 @dataclass
@@ -66,6 +67,7 @@ def git_diff(repo: Path) -> str:
 def run_agent(task: str, repo: Path, model: ChatModel, executor: Executor, config: AgentConfig) -> AgentResult:
     messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": task}]
     format_errors = 0
+    empty_submits = 0
     exit_reason = "max_steps"
     step = 0
 
@@ -83,8 +85,12 @@ def run_agent(task: str, repo: Path, model: ChatModel, executor: Executor, confi
             continue
 
         if command == "echo SUBMIT":
-            exit_reason = "submitted"
-            break
+            if git_diff(repo).strip() or empty_submits >= config.max_empty_submits:
+                exit_reason = "submitted"
+                break
+            empty_submits += 1
+            messages.append({"role": "user", "content": "You haven't changed any files yet. Find and fix the bug first."})
+            continue
 
         result = executor.run(command)
         observation = f"exit code: {result.returncode}\n{truncate(result.output)}"
