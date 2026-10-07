@@ -16,7 +16,7 @@ from .costs import CostTracker
 from .executor import DockerExecutor, LocalExecutor
 from .llm import LLM, LLMConfig
 
-DATASET = "princeton-nlp/SWE-bench_Lite"
+DATASET = "SWE-bench/SWE-bench_Lite"
 
 
 def checkout(repo: str, commit: str, workspace: Path) -> Path:
