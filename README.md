@@ -1,5 +1,7 @@
 # cost-aware-swe-agent
 
+[![tests](https://github.com/ceydat709/cost-aware-swe-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/ceydat709/cost-aware-swe-agent/actions/workflows/tests.yml)
+
 A small coding agent that fixes real GitHub issues from [SWE-bench Lite](https://www.swebench.com/),
 built to answer one question: **how much bug-fixing ability can you get per dollar?**
 
