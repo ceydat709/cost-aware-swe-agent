@@ -20,7 +20,9 @@ from .verify import verify
 SYSTEM_PROMPT = """You are a software engineer fixing a bug in the repository at the current directory.
 Each turn, think briefly, then reply with EXACTLY ONE shell command in a ```bash block.
 Use commands like grep, sed -n, cat, python, and sed -i or a python script to edit files.
-Run tests with `python -m pytest <test_file> -q`. Do not modify existing tests. When the fix is complete, reply with:
+Run tests with `python -m pytest <test_file> -q`. Do not modify existing tests.
+Use `git diff` to review your changes and `git checkout -- <file>` to undo them.
+When the fix is complete, reply with:
 ```bash
 echo SUBMIT
 ```"""
@@ -69,12 +71,18 @@ def truncate(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
     return f"{text[:half]}\n... [{len(text) - limit} chars truncated] ...\n{text[-half:]}"
 
 
-def git_diff(repo: Path) -> str:
-    return subprocess.run(["git", "diff"], cwd=repo, capture_output=True, text=True).stdout
+def git_head(repo: Path) -> str:
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def git_diff(repo: Path, base: str) -> str:
+    """Diff against the starting commit, so the patch is right even if the agent commits or checks out."""
+    return subprocess.run(["git", "diff", base], cwd=repo, capture_output=True, text=True).stdout
 
 
 def run_agent(task: str, repo: Path, model: ChatModel, executor: Executor, config: AgentConfig) -> AgentResult:
     messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": task}]
+    base = git_head(repo)
     format_errors = 0
     empty_submits = 0
     verify_rejections = 0
@@ -96,7 +104,7 @@ def run_agent(task: str, repo: Path, model: ChatModel, executor: Executor, confi
             continue
 
         if command == "echo SUBMIT":
-            if not git_diff(repo).strip():
+            if not git_diff(repo, base).strip():
                 if empty_submits >= config.max_empty_submits:
                     exit_reason = "submitted"
                     break
@@ -104,7 +112,7 @@ def run_agent(task: str, repo: Path, model: ChatModel, executor: Executor, confi
                 messages.append({"role": "user", "content": "You haven't changed any files yet. Find and fix the bug first."})
                 continue
             if config.verify:
-                verdict = verify(repo, executor, config.test_command, config.test_timeout, baseline_cache)
+                verdict = verify(repo, base, executor, config.test_command, config.test_timeout, baseline_cache)
                 if not verdict.ok:
                     verify_rejections += 1
                     if verify_rejections > config.max_verify_failures:
@@ -119,5 +127,5 @@ def run_agent(task: str, repo: Path, model: ChatModel, executor: Executor, confi
         observation = f"exit code: {result.returncode}\n{truncate(result.output)}"
         messages.append({"role": "user", "content": observation})
 
-    return AgentResult(patch=git_diff(repo), exit_reason=exit_reason, steps=step,
+    return AgentResult(patch=git_diff(repo, base), exit_reason=exit_reason, steps=step,
                        verify_rejections=verify_rejections, trajectory=messages)

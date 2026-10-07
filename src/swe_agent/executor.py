@@ -59,6 +59,8 @@ class DockerExecutor:
         self.container = subprocess.run(
             cmd + [image, "sleep", "infinity"], capture_output=True, text=True, check=True
         ).stdout.strip()
+        # The mounted repo is owned by the host user, not root; without this git refuses to run.
+        self.run("git config --global --add safe.directory '*' 2>/dev/null || true")
 
     def run(self, command: str, timeout: int | None = None) -> CommandResult:
         timeout = timeout or self.timeout

@@ -6,6 +6,7 @@ Example:
 
 import argparse
 import json
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -20,14 +21,20 @@ DATASET = "SWE-bench/SWE-bench_Lite"
 
 
 def checkout(repo: str, commit: str, workspace: Path) -> Path:
-    """Clone once per repo into a mirror, then make a fresh worktree per task."""
+    """Clone once per repo into a mirror, then make a fresh local clone per task.
+
+    A local clone has its own self-contained .git (objects are hardlinked, so it's cheap),
+    which means git also works inside the container. A worktree's .git points at a host
+    path that doesn't exist in the container.
+    """
     mirror = workspace / "mirrors" / repo.replace("/", "__")
     if not mirror.exists():
         subprocess.run(["git", "clone", "--quiet", f"https://github.com/{repo}.git", str(mirror)], check=True)
     dest = workspace / "tasks" / f"{repo.replace('/', '__')}__{commit[:8]}"
     if dest.exists():
-        subprocess.run(["git", "worktree", "remove", "--force", str(dest)], cwd=mirror, check=True)
-    subprocess.run(["git", "worktree", "add", "--quiet", "--detach", str(dest), commit], cwd=mirror, check=True)
+        shutil.rmtree(dest)
+    subprocess.run(["git", "clone", "--quiet", "--local", "--no-checkout", str(mirror), str(dest)], check=True)
+    subprocess.run(["git", "checkout", "--quiet", "--detach", commit], cwd=dest, check=True)
     return dest
 
 

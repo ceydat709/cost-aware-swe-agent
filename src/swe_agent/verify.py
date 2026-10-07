@@ -29,8 +29,8 @@ class Verdict:
     message: str
 
 
-def changed_files(repo: Path) -> list[str]:
-    out = subprocess.run(["git", "diff", "--name-only"], cwd=repo, capture_output=True, text=True).stdout
+def changed_files(repo: Path, base: str) -> list[str]:
+    out = subprocess.run(["git", "diff", "--name-only", base], cwd=repo, capture_output=True, text=True).stdout
     return [f for f in out.splitlines() if f.endswith(".py")]
 
 
@@ -64,13 +64,16 @@ def run_tests(executor, files: list[str], test_command: str, timeout: int) -> Te
     return parse_pytest(executor.run(cmd, timeout=timeout).output)
 
 
-def verify(repo: Path, executor, test_command: str, timeout: int, baseline_cache: dict) -> Verdict:
-    files = find_test_files(repo, changed_files(repo))
+def verify(repo: Path, base: str, executor, test_command: str, timeout: int, baseline_cache: dict) -> Verdict:
+    files = find_test_files(repo, changed_files(repo, base))
     if not files:
         return Verdict(True, [], 0, "No related tests found; submitting.")
 
     key = tuple(files)
     if key not in baseline_cache:
+        # If the agent committed or moved HEAD, fold that back into uncommitted changes so
+        # stashing really restores the original code.
+        subprocess.run(["git", "reset", "-q", "--soft", base], cwd=repo, check=True)
         subprocess.run(["git", "stash", "-q"], cwd=repo, check=True)
         try:
             baseline_cache[key] = run_tests(executor, files, test_command, timeout)

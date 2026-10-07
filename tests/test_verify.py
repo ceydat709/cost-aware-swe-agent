@@ -68,6 +68,25 @@ def test_regression_is_rejected_then_fix_is_accepted(tmp_path):
     assert "test_calc.py::test_add" in rejection and "test_needs_network" not in rejection
 
 
+def test_agent_can_undo_with_git_and_commits_are_handled(tmp_path):
+    repo = make_repo(tmp_path)
+    model = ScriptedModel([
+        # Commits a breaking change; verify must still see it (diff is against the start commit).
+        "```bash\nsed -i.bak 's/return a + b/return a - b/' calc.py && rm calc.py.bak && "
+        "git -c user.name=a -c user.email=a@a commit -qam wip\n```",
+        "```bash\necho SUBMIT\n```",
+        # Undoes it with git, then makes the right fix.
+        "```bash\ngit checkout -- calc.py\n```",
+        "```bash\npython3 -c \"import pathlib;p=pathlib.Path('calc.py');"
+        "p.write_text(p.read_text().replace('def sub(a, b):\\n    return a + b', 'def sub(a, b):\\n    return a - b'))\"\n```",
+        "```bash\necho SUBMIT\n```",
+    ])
+    result = run_agent("sub() is wrong", repo, model, LocalExecutor(repo), config())
+    assert result.verify_rejections == 1
+    assert result.exit_reason == "submitted"
+    assert "+    return a - b" in result.patch and result.patch.count("+    return") == 1
+
+
 def test_gives_up_after_max_verify_failures(tmp_path):
     repo = make_repo(tmp_path)
     breaking_edit = "```bash\nsed -i.bak 's/return a + b/return a - b/' calc.py && rm calc.py.bak\n```"
