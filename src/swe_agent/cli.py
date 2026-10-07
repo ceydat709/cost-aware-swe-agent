@@ -13,7 +13,7 @@ from pathlib import Path
 from .agent import AgentConfig, run_agent
 from .cache import ResponseCache
 from .costs import CostTracker
-from .executor import DockerExecutor, LocalExecutor
+from .executor import SWEBENCH_SETUP, DockerExecutor, LocalExecutor, swebench_image
 from .llm import LLM, LLMConfig
 
 DATASET = "SWE-bench/SWE-bench_Lite"
@@ -40,6 +40,9 @@ def main() -> None:
     ap.add_argument("--instances", nargs="*", help="instance_ids to run (default: first --limit)")
     ap.add_argument("--limit", type=int, default=5)
     ap.add_argument("--max-steps", type=int, default=30)
+    ap.add_argument("--verify", action="store_true", help="reject submits that break previously passing tests")
+    ap.add_argument("--plain-image", action="store_true",
+                    help="use a bare python image instead of the task's SWE-bench image (agent can't run tests)")
     ap.add_argument("--local", action="store_true", help="run commands on the host (unsafe; debugging only)")
     ap.add_argument("--workspace", default="work")
     args = ap.parse_args()
@@ -62,17 +65,25 @@ def main() -> None:
         tracker = CostTracker()
         llm = LLM(LLMConfig(model=args.model, base_url=args.base_url, api_key_env=args.api_key_env), cache, tracker)
         repo = checkout(row["repo"], row["base_commit"], workspace)
-        executor = LocalExecutor(repo) if args.local else DockerExecutor(repo)
         start = time.time()
+        if args.local:
+            executor = LocalExecutor(repo)
+        elif args.plain_image:
+            executor = DockerExecutor(repo)
+        else:
+            executor = DockerExecutor(repo, image=swebench_image(row["instance_id"]), mount="/testbed",
+                                      platform="linux/amd64", setup=SWEBENCH_SETUP)
+        config = AgentConfig(max_steps=args.max_steps, verify=args.verify)
         try:
-            result = run_agent(row["problem_statement"], repo, llm, executor, AgentConfig(max_steps=args.max_steps))
+            result = run_agent(row["problem_statement"], repo, llm, executor, config)
         finally:
             executor.close()
 
         with preds_path.open("a") as f:
             f.write(json.dumps({"instance_id": row["instance_id"], "model_name_or_path": args.run_name,
                                 "model_patch": result.patch}) + "\n")
-        log = {"instance_id": row["instance_id"], "exit_reason": result.exit_reason, "steps": result.steps,
+        log = {"instance_id": row["instance_id"], "verify": args.verify, "exit_reason": result.exit_reason,
+               "steps": result.steps, "verify_rejections": result.verify_rejections,
                "seconds": round(time.time() - start, 1), "cost": tracker.summary()}
         (run_dir / f"{row['instance_id']}.traj.json").write_text(json.dumps({**log, "trajectory": result.trajectory}, indent=2))
         with (run_dir / "costs.jsonl").open("a") as f:
