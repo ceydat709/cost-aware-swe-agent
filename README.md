@@ -34,6 +34,10 @@ swe-agent --model qwen2.5-coder:7b --limit 1 --run-name smoke-verify --verify
 # Sanity-check the harness with the reference patches
 scripts/evaluate.sh gold psf__requests-2317
 
+# Full experiment: baseline vs. --verify on 5 tasks, scored, with a summary table (resumable)
+scripts/run_comparison.sh qwen2.5-coder:7b exp1
+python scripts/summarize.py exp1-baseline exp1-verify
+
 # Score with the official harness
 scripts/evaluate.sh smoke
 ```
