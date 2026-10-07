@@ -56,7 +56,11 @@ def parse_pytest(output: str) -> TestRun:
 
 
 def run_tests(executor, files: list[str], test_command: str, timeout: int) -> TestRun:
-    cmd = f"{test_command} -rA -q --tb=no -p no:cacheprovider {' '.join(files)}"
+    # Python reuses .pyc files when a source file's size and whole-second mtime match. A same-size
+    # edit made within a second of the baseline run would then test the *original* code, so clear
+    # the caches and don't write new ones.
+    clear = "find . -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null; "
+    cmd = f"{clear}PYTHONDONTWRITEBYTECODE=1 {test_command} -rA -q --tb=no -p no:cacheprovider {' '.join(files)}"
     return parse_pytest(executor.run(cmd, timeout=timeout).output)
 
 
